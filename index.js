@@ -4,18 +4,6 @@ const path = require('path');
 const extend = require('node.extend');
 
 
-module.exports = (user, pwd) => {
-
-    return new Promise((resolve, reject) => {
-
-        new Crack(user, pwd).go()
-            .then(count => resolve(count))
-            .catch(err => reject(err));
-
-    });
-
-};
-
 function logHandle(outErr) {
 
     let UTCTime = new Date().toUTCString();
@@ -323,9 +311,7 @@ Crack.prototype.go = function () {
 
                 if (!body) return false;
 
-                setTimeout(() => {
-                    resolve(that.count);
-                }, 8888);
+                resolve();
 
                 handle(body, {
                     stuId: stuId
@@ -402,3 +388,29 @@ Crack.prototype.createOptions = (uri, option) => {
     }
 
 };
+
+
+
+module.exports = (user, pwd) => {
+
+    return new Promise((resolve, reject) => {
+
+        let crack = new Crack(user, pwd);
+
+        crack.go()
+            .then(() => {
+                process.on('exit', () => {
+                    resolve(crack.count);
+                });
+            })
+            .catch(msg => reject(msg));
+
+    });
+
+};
+
+// example
+/*
+module.exports('18360427', 'hc13221930708')
+.then(count => console.log(count))
+.catch(msg => console.log(msg));*/

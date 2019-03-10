@@ -6,5 +6,5 @@
 const ykt = require('YunkeTang');
 ykt('user', 'pwd')
     .then(count => console.log(count))
-    .catch(err => console.log(err));
+    .catch(msg => console.log(msg));
 ```
