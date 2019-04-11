@@ -410,7 +410,7 @@ module.exports = (user, pwd) => {
 };
 
 // example
-/*
-module.exports('18360427', 'hc13221930708')
+
+module.exports('学号', '密码')
 .then(count => console.log(count))
-.catch(msg => console.log(msg));*/
+.catch(msg => console.log(msg));
