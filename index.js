@@ -1,35 +1,12 @@
-const request = require('request-promise-native');
 const fs = require('fs');
 const path = require('path');
 const extend = require('node.extend');
+const util = require('util');
+const {spawn} = require('child_process');
 
+const request = require('./easy_request');
 
-function logHandle(outErr) {
-
-    let UTCTime = new Date().toUTCString();
-
-    let filePath = path.join(__dirname, './errorLog.txt');
-
-    fs.readFile(filePath, 'utf8', (err, data) => {
-
-        if (err) {
-            return fs.writeFile(filePath, UTCTime + '   ' + err.toString() + '\r\n\r\n', 'utf8', (err) => {
-                if (err) {
-                    throw err;
-                }
-            });
-        }
-
-
-        fs.writeFile(filePath, data + UTCTime + '   ' + outErr.toString() + '\r\n', 'utf8', (err) => {
-            if (err) {
-                throw err;
-            }
-        });
-
-    });
-
-}
+const logHandle = require('./log');
 
 function Crack(user, pwd) {
 
@@ -42,7 +19,7 @@ function Crack(user, pwd) {
 }
 
 /**
- * 请求地址,放在原型中存储
+ * 请求地址
  * @type {{getCellListByTopicId: string, getTopicListByModuleId: string, getModuleListByClassId: string, getCourseList: string, login: string}}
  */
 Crack.prototype.requestUri = {
@@ -53,42 +30,26 @@ Crack.prototype.requestUri = {
     getTopicListByModuleId: 'https://zjy2.icve.com.cn/newmobileapi/AssistTeacher/getTopicListByModuleId',
     getCellListByTopicId: 'https://zjy2.icve.com.cn/newmobileapi/AssistTeacher/getCellListByTopicId',
     getCellInfoByCellId: 'https://zjy2.icve.com.cn/newmobileapi/AssistTeacher/getCellInfoByCellId',
-    stuProcessCellLog: 'https://zjy2.icve.com.cn/newmobileapi/Student/stuProcessCellLog'
+    stuProcessCellLog: 'https://zjy2.icve.com.cn/newmobileapi/Student/stuProcessCellLog',
+    getMyCourseList: 'https://mooc.icve.com.cn/mobile/courseinfo/getMyCourseList'
 
 };
 
 Crack.prototype.go = function () {
 
-    let resultArray = [];
+    return new Promise((resolve, reject) => {
 
-    let uri = this.requestUri;
+        let that = this;
 
-    let nodeName = [
-        'dataList',
-        'moduleList',
-        'topicList',
-        'cellList',
-        'cellChildNodeList',
-        'cellInfo'
-    ];
+        function dataList(body, option) {
 
-    let that = this;
-
-    function handle(body, option) {
-
-        // if (Object.prototype.toString.call(body) === '[object Array]') {
-        //
-        //     extend(body, body[0]);
-        //
-        // }
-
-        let currentNode = '';
-
-        let NodeHandle = {
-            // 此函数调用了resolve
-            dataList: function (body, option) {
+            return new Promise(function (resolve) {
 
                 let arr = body.dataList;
+
+                let promiseContainer = [];
+
+                let config = [];
 
                 arr.forEach(item => {
 
@@ -100,200 +61,22 @@ Crack.prototype.go = function () {
 
                     optionNew.openClassId = item.openClassId;
 
-                    request(that.createOptions(that.requestUri.getModuleListByClassId, optionNew))
-                        .then(body => {
-                            handle(body, optionNew);
-                        })
-                        .catch(logHandle);
-                });
+                    config.push(optionNew);
 
-            },
-
-            moduleList: function (body, option) {
-
-                let arr = body.moduleList;
-
-                arr.forEach(item => {
-
-                    let optionNew = {};
-
-                    extend(optionNew, option);
-
-                    optionNew.moduleId = item.moduleId;
-
-                    request(that.createOptions(that.requestUri.getTopicListByModuleId, optionNew))
-                        .then(body => {
-                            handle(body, optionNew);
-                        })
-                        .catch(logHandle);
+                    promiseContainer.push(request.requestByGet(that.requestUri.getModuleListByClassId, optionNew));
 
                 });
 
-            },
-
-            topicList: function (body, option) {
-
-                let arr = body.topicList;
-
-                arr.forEach(item => {
-
-                    let optionNew = {};
-
-                    extend(optionNew, option);
-
-                    optionNew.topicId = item.topicId;
-
-                    request(that.createOptions(that.requestUri.getCellListByTopicId, optionNew))
-                        .then(body => {
-                            if (body.cellList[0] === undefined) {
-                                return false;
-                            }
-                            handle(body, optionNew);
-                        })
-                        .catch(logHandle);
-
-                });
-
-            },
-
-            cellList: function (body, option) {
-
-                let arr = body.cellList;
-
-                let childNodeList = arr[0]['cellType'] === 1;
-
-                if (childNodeList) {
-
-                    /**
-                     *
-                     * 处理cellList里面直接是文档和视频的情况
-                     *
-                     */
-
-                    return arr.forEach(item => {
-
-                        let optionNew = {};
-
-                        extend(optionNew, option);
-
-                        optionNew.cellId = item.cellId;
-
-                        request(that.createOptions(that.requestUri.getCellInfoByCellId, optionNew))
-                            .then(body => {
-                                handle(body, optionNew);
-                            })
-                            .catch(logHandle);
+                Promise.all(promiseContainer)
+                    .then(value => {
+                        resolve({
+                            value: value,
+                            config: config
+                        });
                     });
+            });
 
-                }
-
-                let optionNew = {};
-
-                extend(optionNew, option);
-
-                arr.forEach(item => {
-
-                    handle(item, optionNew);
-
-                });
-
-            },
-
-            cellChildNodeList: function (body, option) {
-
-                let arr = body.cellChildNodeList;
-
-                arr.forEach(item => {
-
-                    let optionNew = {};
-
-                    extend(optionNew, option);
-
-                    optionNew.cellId = item.cellId;
-
-                    request(that.createOptions(that.requestUri.getCellInfoByCellId, optionNew))
-                        .then(body => {
-                            handle(body, optionNew);
-                        })
-                        .catch(logHandle);
-
-                });
-
-            },
-
-            cellInfo: function (body, option) {
-
-                let arr = body.cellInfo;
-
-                let optionNew = {};
-
-                extend(optionNew, option);
-
-                optionNew.token = arr.token;
-
-                optionNew.cellLogId = arr.cellLogId;
-
-                optionNew.cellId = arr.cellId;
-
-                this.sendRecord(optionNew);
-
-            },
-
-            // 处理最终请求逻辑
-            sendRecord: function (option) {
-
-                option.sourceType = '2';
-                option.picNum = '500';
-                option.studyCellTime = '8888';
-                option.studyNewlyTime = '0';
-                option.studyNewlyPicNum = '0';
-
-                request(that.createOptions(that.requestUri.stuProcessCellLog, option))
-                    .then(body => {
-                        if (body.code !== 1) {
-                            return logHandle(new Error('发送结果时code不为1了，错了啊。' + JSON.stringify(body)));
-                        }
-                        that.count++;
-                    })
-                    .catch(logHandle);
-
-            }
-
-        };
-
-        nodeName.forEach(item => {
-
-            if (body[item]) {
-                currentNode = item;
-            }
-
-        });
-
-        switch (currentNode) {
-            case 'dataList':
-                NodeHandle.dataList(body, option);
-                break;
-            case 'moduleList':
-                NodeHandle.moduleList(body, option);
-                break;
-            case 'topicList':
-                NodeHandle.topicList(body, option);
-                break;
-            case 'cellList':
-                NodeHandle.cellList(body, option);
-                break;
-            case 'cellChildNodeList':
-                NodeHandle.cellChildNodeList(body, option);
-                break;
-            case 'cellInfo':
-                NodeHandle.cellInfo(body, option);
-                break;
         }
-
-
-    }
-
-    return new Promise((resolve, reject) => {
 
         let stuId = '';
 
@@ -303,19 +86,104 @@ Crack.prototype.go = function () {
                 if (body['code'] === -1) {
                     return reject(body['msg']);
                 }
-                return request(that.createOptions(that.requestUri.getCourseList, {
+                return request.requestByGet(that.requestUri.getCourseList, {
                     stuId: stuId
-                }))
+                })
             })
             .then((body) => {
 
-                if (!body) return false;
+                if (!body) return Promise.reject(body);
 
-                resolve();
-
-                handle(body, {
+                return dataList(body, {
                     stuId: stuId
-                })
+                });
+
+            })
+            .then((obj) => {
+                /**
+                 * { value:
+   [ { code: 1, moduleList: [Array], msg: '获取成功！' },
+     { code: 1, moduleList: [Array], msg: '获取成功！' } ],
+  config:
+   [ { stuId: 'hzruahepsjjhcdcunp4aiq',
+       courseOpenId: '61gaaxwp3i9mux1cqpptsw',
+       openClassId: '1sx2aaeq5kzfuxqzekfgw' },
+     { stuId: 'hzruahepsjjhcdcunp4aiq',
+       courseOpenId: 'axdahwp9krfr8qgwmldka',
+       openClassId: 'd1khaqeqh5peghmiu6jayq' } ] }
+                 */
+
+                 let i = 0;
+                 let len = obj.value.length;
+                 let count = 0;
+
+                 function recursive() {
+
+                    if (i === len) {
+                        return false;
+                    };
+
+                    let ykt = spawn('node', [path.join(__dirname, './plugin/ykt.js'), JSON.stringify(obj.value[i]), JSON.stringify(obj.config[i])]);
+
+                    ykt.stdout.on('data', chunk => {
+                        count += parseInt(chunk.toString());
+                        recursive();
+                    });
+
+                    ykt.stderr.on('data', () => recursive());
+
+                    i++;
+
+                 }
+
+                 recursive();
+
+                 return new Promise(resolve => {
+                    let timer = setInterval(() => {
+                        if (i === len) {
+                            request.requestByPost(that.requestUri.getMyCourseList, {userId: stuId}).then(res => resolve(res));
+                            clearInterval(timer);
+                        }
+                    }, 1000);
+                });
+                
+            })
+            .then(res => {
+
+                const list = res.list;
+
+                let i = 0;
+                let len = list.length;
+                let count = 0;
+
+                function recursive() {
+
+                   if (i === len) {
+                       return false;
+                   };
+
+                   let ykt = spawn('node', [path.join(__dirname, './plugin/mooc.js'), JSON.stringify(list[i]), JSON.stringify({userId: stuId})]);
+
+                   ykt.stdout.on('data', chunk => {
+                       count += parseInt(chunk.toString());
+                       recursive();
+                   });
+
+                   ykt.stderr.on('data', () => recursive());
+
+                   i++;
+
+                }
+
+                recursive();
+
+                let timer = setInterval(() => {
+                    if (i === len) {
+                        clearInterval(timer);
+                        resolve(1);
+                    }
+                }, 1000);
+
             })
             .catch(logHandle);
 
@@ -351,14 +219,14 @@ Crack.prototype.login = function () {
 
     return new Promise(function (resolve, reject) {
 
-        request(that.createOptions(that.requestUri.login, {
+        request.requestByGet(that.requestUri.login, {
 
-            clientId: 'b42b6aae4c05c8f9516540d6d693fa82',
-            sourceType: '2',
-            userName: that.user,
-            userPwd: that.pwd
+                clientId: 'b42b6aae4c05c8f9516540d6d693fa82',
+                sourceType: '2',
+                userName: that.user,
+                userPwd: that.pwd
 
-        }))
+            })
             .then(function (body) {
 
                 resolve(body);
@@ -374,43 +242,30 @@ Crack.prototype.login = function () {
 
 };
 
-Crack.prototype.createOptions = (uri, option) => {
 
-    if (Object.prototype.toString.call(uri) !== '[object String]' || Object.prototype.toString.call(option) !== '[object Object]') {
-        throw 'parameter is error! need first parameter is String, last parameter is Object.';
-    }
+module.exports.go = (user, pwd) => {
 
-    return {
-        method: 'GET',
-        qs: option,
-        uri: uri,
-        json: true
-    }
+    return new Crack(user, pwd).go();
 
 };
 
-
-
-module.exports = (user, pwd) => {
-
+// code -1 msg 错误信息
+module.exports.login = function (user, pwd) {
     return new Promise((resolve, reject) => {
 
-        let crack = new Crack(user, pwd);
-
-        crack.go()
-            .then(() => {
-                process.on('exit', () => {
-                    resolve(crack.count);
-                });
+        new Crack(user, pwd).login()
+            .then(body => {
+                if (body.code !== 1) {
+                    return reject(body.msg);
+                }
+                return resolve();
             })
-            .catch(msg => reject(msg));
+            .catch(err => reject(err));
 
     });
-
 };
 
 // example
-
-module.exports('学号', '密码')
-.then(count => console.log(count))
-.catch(msg => console.log(msg));
+module.exports.go('18360427', 'hc13221930708')
+    .then(() => console.log('complete'))
+    .catch(msg => console.log(msg));
