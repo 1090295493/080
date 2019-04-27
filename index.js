@@ -266,6 +266,6 @@ module.exports.login = function (user, pwd) {
 };
 
 // example
-module.exports.go('18360427', 'hc13221930708')
+module.exports.go('学号', '密码')
     .then(() => console.log('complete'))
     .catch(msg => console.log(msg));
